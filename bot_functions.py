@@ -2,6 +2,7 @@ from binance_f import RequestClient
 from binance_f.constant.test import *
 from binance_f.base.printobject import *
 from binance_f.model.constant import *
+from datetime import datetime
 import pandas as pd
 import numpy as np
 import time
@@ -41,16 +42,16 @@ def get_futures_balance(client, _asset = "USDT"):
 
 #Init the market we want to trade. First we change leverage type
 #then we change margin type
-def initialise_futures(client, _market="BTCUSDT", _leverage=1, _margin_type="CROSSED"):
+def initialise_futures(client, std, _market="BTCUSDT", _leverage=1, _margin_type="CROSSED"):
     try:
         client.change_initial_leverage(_market, _leverage)
     except Exception as e:
-        print(e)
-
+        singlePrint(e, std)
     try:
         client.change_margin_type(_market, _margin_type)
     except Exception as e:
-        print(e)
+        singlePrint(e, std)
+
 
 #get all of our open orders in a market
 def get_orders(client, _market="BTCUSDT"):
@@ -211,14 +212,14 @@ def construct_heikin_ashi(o, h, l, c):
 
 def handle_signal(client, std, market="BTCUSDT", leverage=3, order_side="BUY", 
                   stop_side="SELL", _callbackRate=2.0):
-    initialise_futures(client, _market=market, _leverage=leverage)
+    initialise_futures(client, std, _market=market, _leverage=leverage)
     qty = calculate_position(client, market, _leverage=leverage)
 
-    enablePrint(std)
+    #enablePrint(std)
     execute_order(client, _qty=qty, _side=order_side, _market=market)
-    blockPrint()
+    #blockPrint()
 
-    market_price = get_market_price(client, _market=market)
+    entry_price = get_market_price(client, _market=market)
 
     side = -1
     if order_side == "BUY":
@@ -228,7 +229,7 @@ def handle_signal(client, std, market="BTCUSDT", leverage=3, order_side="BUY",
         
     in_position = True
 
-    singlePrint(f"{order_side}: {qty} ${market_price} using x{leverage} leverage", std)
+    singlePrint(f"BOT - CURRENT POSITION: {order_side}: {qty} ${entry_price} using x{leverage} leverage", std)
 
     #close any open trailing stops we have
     client.cancel_all_orders(market)
@@ -236,14 +237,14 @@ def handle_signal(client, std, market="BTCUSDT", leverage=3, order_side="BUY",
 
     log_trade(_qty=qty, _market=market, _leverage=leverage, _side=side,
       _cause="Signal Change", _trigger_price=0, 
-      _market_price=market_price, _type=order_side)
+      _market_price=entry_price, _type=order_side)
 
     #Let the order execute and then create a trailing stop market order.
     time.sleep(3)
     submit_trailing_order(client, _market=market, _qty =qty, _side=stop_side,
                              _callbackRate=_callbackRate)
 
-    return qty, side, in_position
+    return qty, side, in_position, entry_price
 
 #create a dataframe for our candles
 def to_dataframe(o, h, l, c, v):
@@ -414,3 +415,24 @@ def log_trade(_qty=0, _market="BTCUSDT", _leverage=1, _side="long", _cause="sign
 
     df = df.append(df2, ignore_index=True)
     df.to_csv("trade_log.csv", index=False)
+
+def stamp_time(std):
+    now = datetime.now()
+    current_time = now.strftime("%H:%M:%S")
+    singlePrint(f"Current Time = {current_time}", std)
+
+#calculate return on equity in percent
+def calculate_roe(side, entry_price, market_price, leverage=1):
+    imr = 1/leverage
+    roe = side * 100.0* (1.0 - (entry_price/market_price))/imr
+    return round(roe,2)
+
+#calculate target price for given roe in percent
+def calculate_target_price(side, entry_price,  target_roe = 4.0, leverage=1):
+    if side == 1:
+        #calculate for long
+        target_price = entry_price * (target_roe*0.01/leverage + 1.0)
+    elif side == -1:
+        target_price = entry_price * (1.0 - target_roe*0.01/leverage)
+    
+    return round(target_price,6)
