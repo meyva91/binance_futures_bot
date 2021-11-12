@@ -1,0 +1,9 @@
+{
+	"market": "1000SHIBUSDT",
+	"leverage": "4",
+	"target_roe": "3.0",
+	"trading_periods": "1m",
+	"margin_type": "ISOLATED",
+	"trailing_percentage": "0.8",
+	"api_url": "https://fapi.binance.com/"
+}
